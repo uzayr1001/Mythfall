@@ -10,6 +10,8 @@ const JUMP_VELOCITY := -650.0
 const GRAVITY := 1650.0
 const DASH_SPEED := 900.0
 const DASH_TIME := 0.16
+const DASH_COOLDOWN := 0.62
+const ATTACK_COOLDOWN := 0.28
 const MAX_HEALTH := 3
 
 var health := MAX_HEALTH
@@ -17,6 +19,7 @@ var facing := 1
 var jumps_left := 2
 var dash_timer := 0.0
 var dash_cooldown := 0.0
+var attack_cooldown := 0.0
 var attacking := false
 var invulnerable := false
 var dead := false
@@ -35,6 +38,7 @@ func _physics_process(delta: float) -> void:
 		return
 
 	dash_cooldown = maxf(0.0, dash_cooldown - delta)
+	attack_cooldown = maxf(0.0, attack_cooldown - delta)
 	if is_on_floor():
 		jumps_left = 2
 
@@ -49,11 +53,11 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("dash") and dash_cooldown <= 0.0:
 		dash_timer = DASH_TIME
-		dash_cooldown = 0.62
+		dash_cooldown = DASH_COOLDOWN
 		velocity = Vector2(facing * DASH_SPEED, 0.0)
 
 	if dash_timer > 0.0:
-		dash_timer -= delta
+		dash_timer = maxf(0.0, dash_timer - delta)
 		velocity.x = facing * DASH_SPEED
 	else:
 		var acceleration := GROUND_ACCEL if is_on_floor() else AIR_ACCEL
@@ -61,18 +65,24 @@ func _physics_process(delta: float) -> void:
 		if not is_on_floor():
 			velocity.y += GRAVITY * delta
 
-	if Input.is_action_just_pressed("attack") and not attacking:
+	if Input.is_action_just_pressed("attack") and attack_cooldown <= 0.0 and not attacking:
 		_attack()
 
 	move_and_slide()
 
 func _attack() -> void:
 	attacking = true
+	attack_cooldown = ATTACK_COOLDOWN
 	attack_area.position.x = 42.0 * facing
 	attack_area.monitoring = true
+	body_visual.modulate = Color(1.0, 0.88, 0.62, 1.0)
 	await get_tree().create_timer(0.13).timeout
+	if not is_instance_valid(self):
+		return
 	attack_area.monitoring = false
 	attacking = false
+	if not invulnerable and not dead:
+		body_visual.modulate = Color.WHITE
 
 func take_damage(amount: int, knockback: Vector2) -> void:
 	if invulnerable or dead:
@@ -83,9 +93,10 @@ func take_damage(amount: int, knockback: Vector2) -> void:
 	invulnerable = true
 	modulate = Color(1.0, 0.45, 0.45, 1.0)
 	await get_tree().create_timer(0.72).timeout
-	if is_instance_valid(self):
-		modulate = Color.WHITE
-		invulnerable = false
+	if not is_instance_valid(self):
+		return
+	modulate = Color.WHITE
+	invulnerable = false
 	if health <= 0:
 		dead = true
 		player_died.emit()
